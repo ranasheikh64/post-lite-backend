@@ -1,5 +1,16 @@
 const Workspace = require('../models/Workspace');
 const User = require('../models/User');
+const Invitation = require('../models/Invitation');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  }
+});
 
 exports.createWorkspace = async (req, res) => {
   try {
@@ -63,6 +74,100 @@ exports.addMember = async (req, res) => {
     res.json(updatedWorkspace);
   } catch (err) {
     res.status(400).json({ message: err.message });
+  }
+};
+
+exports.inviteMember = async (req, res) => {
+  try {
+    const { email, role } = req.body;
+    const workspaceId = req.params.id;
+
+    const workspace = await Workspace.findById(workspaceId);
+    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+
+    // Ensure inviter has permission
+    const isOwner = workspace.owner.toString() === req.user.id;
+    const adminMember = workspace.members.find(m => m.user.toString() === req.user.id && m.role === 'admin');
+    if (!isOwner && !adminMember) {
+      return res.status(403).json({ message: 'Only owner or admin can invite members' });
+    }
+
+    // Check if user is already a member
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      if (workspace.owner.toString() === existingUser._id.toString()) {
+        return res.status(400).json({ message: 'User is already the owner' });
+      }
+      const existingMember = workspace.members.find(m => m.user.toString() === existingUser._id.toString());
+      if (existingMember) {
+        return res.status(400).json({ message: 'User is already a member' });
+      }
+    }
+
+    // Generate secure token
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+    await Invitation.create({
+      email,
+      workspaceId,
+      role: role || 'viewer',
+      token,
+      invitedBy: req.user.id,
+      expiresAt
+    });
+
+    const inviteLink = `https://ranasheikh64.github.io/Post-Lite/#/invite?token=${token}`;
+    
+    const mailOptions = {
+      from: `"Jronix Post" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: `You've been invited to join ${workspace.name} on Jronix Post`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2>Workspace Invitation</h2>
+          <p>Hello,</p>
+          <p>You have been invited to join the <strong>${workspace.name}</strong> workspace on Jronix Post.</p>
+          <p>Click the button below to accept the invitation:</p>
+          <a href="${inviteLink}" style="display: inline-block; padding: 12px 24px; background-color: #F97316; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0;">Accept Invitation</a>
+          <p>Or copy this link: <a href="${inviteLink}">${inviteLink}</a></p>
+          <p>This link will expire in 7 days.</p>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    res.json({ message: 'Invitation sent successfully' });
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.acceptInvite = async (req, res) => {
+  try {
+    const { token } = req.body;
+    
+    const invite = await Invitation.findOne({ token, expiresAt: { $gt: new Date() } });
+    if (!invite) return res.status(400).json({ message: 'Invalid or expired invitation token' });
+
+    const workspace = await Workspace.findById(invite.workspaceId);
+    if (!workspace) return res.status(404).json({ message: 'Workspace no longer exists' });
+
+    // The user calling this endpoint is the authenticated user that clicked accept
+    // We double check if they are already in
+    const existingMember = workspace.members.find(m => m.user.toString() === req.user.id);
+    if (!existingMember && workspace.owner.toString() !== req.user.id) {
+      workspace.members.push({ user: req.user.id, role: invite.role });
+      await workspace.save();
+    }
+
+    // Delete the invite since it's used
+    await Invitation.findByIdAndDelete(invite._id);
+
+    res.json({ message: 'Successfully joined workspace', workspaceId: workspace._id });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
