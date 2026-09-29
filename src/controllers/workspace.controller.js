@@ -7,8 +7,8 @@ const nodemailer = require('nodemailer');
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
   }
 });
 
@@ -120,7 +120,7 @@ exports.inviteMember = async (req, res) => {
     const inviteLink = `https://ranasheikh64.github.io/Post-Lite/#/invite?token=${token}`;
     
     const mailOptions = {
-      from: `"Jronix Post" <${process.env.EMAIL_USER}>`,
+      from: `"Jronix Post" <${process.env.SMTP_USER}>`,
       to: email,
       subject: `You've been invited to join ${workspace.name} on Jronix Post`,
       html: `
