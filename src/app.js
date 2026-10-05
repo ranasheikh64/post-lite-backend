@@ -13,7 +13,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // handle preflight for all routes
+app.options(/.*/, cors(corsOptions)); // handle preflight for all routes
 
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
