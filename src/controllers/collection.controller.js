@@ -110,7 +110,33 @@ exports.getCollections = async (req, res) => {
       }
     });
 
+    rootCollections.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+
     res.json(rootCollections);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.reorderCollections = async (req, res) => {
+  try {
+    const { collectionIds } = req.body;
+    if (!Array.isArray(collectionIds)) {
+      return res.status(400).json({ message: 'collectionIds must be an array' });
+    }
+
+    const updates = collectionIds.map((id, index) => ({
+      updateOne: {
+        filter: { _id: id },
+        update: { $set: { sortOrder: index } }
+      }
+    }));
+
+    if (updates.length > 0) {
+      await Collection.bulkWrite(updates);
+    }
+
+    res.status(200).json({ message: 'Order updated successfully' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
